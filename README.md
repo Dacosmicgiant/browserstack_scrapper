@@ -43,8 +43,8 @@ translates their titles to English, and runs in parallel across 5 browsers via B
 
 ### 1. Clone the repository
 ```bash
-git clone https://github.com/your-username/elpais-opinion-scraper.git
-cd elpais-opinion-scraper
+git clone https://github.com/Dacosmicgiant/browserstack_scrapper.git
+cd browserstack_scrapper
 ```
 
 ### 2. Create and activate a virtual environment
@@ -95,8 +95,13 @@ You can find your BrowserStack credentials at:
 ---
 
 ## Running the Scraper
+Using browser stack
 ```bash
-python elpais_scraper.py
+python elpais_opinion_browserstack.py
+```
+Using localhost
+```bash
+python elpais_opinion_local.py
 ```
 
 Expected runtime is **5–6 minutes** due to 5 parallel sessions each fetching 5 full article pages.
