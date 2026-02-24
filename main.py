@@ -1,33 +1,18 @@
 from selenium import webdriver
-from selenium.webdriver.chrome.service import Service
-from webdriver_manager.chrome import ChromeDriverManager
-from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.firefox.options import Options
 import time
 
-# configure language
-chrome_options = Options()
-chrome_options.add_argument("--lang=es-ES") # to make sure language stays Spanish
-chrome_options.add_experimental_option(
-    "prefs", {"intl.accept_languages": "es-ES"}
-)
+options = Options()
+options.set_preference("intl.accept_languages", "es-ES,es")
+# options.add_argument("--headless")  # IMPORTANT on many Linux systems
 
-# Start the web driver
-driver = webdriver.Chrome(
-    service=Service(ChromeDriverManager().install()),
-    options=chrome_options
-    )
+driver = webdriver.Firefox(options=options)
 
-# open website
-url="https://elpais.com/"
-driver.get(url)
+driver.get("https://elpais.com/")
+time.sleep(5)
 
-time.sleep(5) # wait for the page to load
+print(driver.title)
+print(len(driver.page_source))
 
-print("Title: ", driver.title)
-print("URL: ", driver.current_url)
-
-html= driver.page_source
-print("HTML length: ", len(html))
-
-input("Press Enter to close the browser...")
 driver.quit()
+
