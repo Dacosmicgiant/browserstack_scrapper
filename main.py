@@ -1,23 +1,5 @@
-# legacy code
-
-# from selenium import webdriver
-# from selenium.webdriver.firefox.options import Options
-# import time
-
-# options = Options()
-# options.set_preference("intl.accept_languages", "es-ES,es")
-# # options.add_argument("--headless")  # IMPORTANT on many Linux systems
-
-# driver = webdriver.Firefox(options=options)
-
-# driver.get("https://elpais.com/")
-# time.sleep(5)
-
-# print(driver.title)
-# print(len(driver.page_source))
-
-# driver.quit()
-
+from collections import Counter
+import re
 import os
 import json
 import requests
@@ -26,9 +8,9 @@ from bs4 import BeautifulSoup
 from selenium import webdriver
 from selenium.webdriver.firefox.options import Options
 
-def extract_opinion_urls(soup):
-    import json
+# EXTRACT OPINION ARTICLE URLS FROM EL PAÍS HOMEPAGE
 
+def extract_opinion_urls(soup):
     urls = []
     scripts = soup.find_all("script", type="application/ld+json")
 
@@ -41,7 +23,6 @@ def extract_opinion_urls(soup):
         except:
             continue
 
-        # recursive search
         def find_urls(obj):
             if isinstance(obj, dict):
                 for k, v in obj.items():
@@ -55,7 +36,11 @@ def extract_opinion_urls(soup):
 
         find_urls(data)
 
-    return list(dict.fromkeys(urls))  # remove duplicates
+    # remove duplicates
+    return list(dict.fromkeys(urls))
+
+
+# TRANSLATE TITLES
 
 def translate_titles_to_english(spanish_titles):
     url = "https://rapid-translate-multi-traduction.p.rapidapi.com/t"
@@ -77,101 +62,131 @@ def translate_titles_to_english(spanish_titles):
 
     return response.json()
 
-# environment variables for headless mode and sandboxing
-os.environ["MOZ_HEADLESS"] = "1"  # Run Firefox in headless mode
-os.environ["MOZ_DISABLE_CONTENT_SANDBOX"] = "1"  # Disable content sandboxing
+# FIND REPEATED WORDS
 
-# configure Firefox options
-options = Options()
-options.set_preference("intl.accept_languages", "es-ES,es")
-# options.add_argument("--headless")  # IMPORTANT on many Linux systems
+def find_repeated_words(titles, min_count=3):
+    all_words = []
 
-driver = webdriver.Firefox(options=options)
+    for title in titles:
+        title = title.lower()
+        title = re.sub(r"[^\w\s]", "", title)
+        all_words.extend(title.split())
 
-# open EL PAIS
-driver.get("https://elpais.com/")
-time.sleep(5)
+    stopwords = {
+        "the","a","an","of","to","in","on","for","and","or",
+        "with","at","by","from","is","are","was","were"
+    }
 
-html = driver.page_source
-soup = BeautifulSoup(html, "lxml")
+    filtered = [w for w in all_words if w not in stopwords]
+    counts = Counter(filtered)
 
-article_urls = extract_opinion_urls(soup)[:5]
+    return {w: c for w, c in counts.items() if c >= min_count}
 
-# legacy method
 
-# scripts = soup.find_all("script", type="application/ld+json")
-# print("JSON-LD scripts found:", len(scripts))
-# for script in scripts:
-#     try:
-#         data = json.loads(script.string)
-        
-#         # sometimes  it's a list, sometimes dict
-#         items = data if isinstance(data, list) else [data]
+# SCRAPE SINGLE ARTICLE
 
-#         for item in items:
-#             if "itemListElement" in item:
-#                 for entry in item["itemListElement"]:
-#                     url = entry.get("url", "")
-#                     if "/opinion/" in url:
-#                         article_urls.append(url)
-#     except json.JSONDecodeError:
-#         continue
-
-# remove duplicates and keep first 5
-
-article_urls = [
-    u for u in extract_opinion_urls(soup)
-    if "/opinion/" in u and not u.rstrip("/").endswith("/opinion")
-][:5]
-
-print("\n Found opinion articles:")
-for url in article_urls:
-    print(url)
-
-os.makedirs("images", exist_ok=True)
-
-spanish_titles = []
-# Scrape each article
-for i, url in enumerate(article_urls, 1):
+def scrape_single_article(driver, url, index, image_dir="images"):
     print("\n==============================")
-    print("Scraping article", i)
+    print("Scraping article", index)
 
     driver.get(url)
     time.sleep(4)
 
-    article_soup = BeautifulSoup(driver.page_source, "lxml")
+    soup = BeautifulSoup(driver.page_source, "lxml")
 
-    # ---------------- TITLE ----------------
-    title_tag = article_soup.find("h1")
+    # ----- TITLE -----
+    title_tag = soup.find("h1")
     title = title_tag.get_text(strip=True) if title_tag else "No title"
+
     print("\nTITLE (Spanish):")
     print(title)
-    spanish_titles.append(title)
 
-    # ---------------- CONTENT ----------------
-    paragraphs = article_soup.select("article p")
+    # ----- CONTENT -----
+    paragraphs = soup.select("article p")
     content = "\n".join(p.get_text(strip=True) for p in paragraphs)
 
     print("\nCONTENT PREVIEW:")
     print(content[:500], "...")
 
-    # ---------------- COVER IMAGE ----------------
-    img = article_soup.find("figure")
-    if img:
-        img_tag = img.find("img")
-        if img_tag and img_tag.get("src"):
-            img_url = img_tag["src"]
-            try:
-                img_data = requests.get(img_url).content
-                path = f"images/article_{i}.jpg"
-                with open(path, "wb") as f:
-                    f.write(img_data)
-                print("Image saved:", path)
-            except:
-                print("Image download failed")
+    # ----- IMAGE -----
+    os.makedirs(image_dir, exist_ok=True)
+
+    img_url = None
+
+    og = soup.find("meta", property="og:image")
+    if og and og.get("content"):
+        img_url = og["content"]
+
+    if not img_url:
+        img = soup.select_one("article img")
+        if img and img.get("src"):
+            img_url = img["src"]
+
+    if img_url:
+        try:
+            img_data = requests.get(img_url, timeout=10).content
+            path = f"{image_dir}/article_{index}.jpg"
+            with open(path, "wb") as f:
+                f.write(img_data)
+            print("Image saved:", path)
+        except Exception as e:
+            print("Image download failed:", e)
     else:
-        print("No cover image found")
-        
+        print("No image found")
+
+    return title
+
+
+# SCRAPE MULTIPLE ARTICLES
+
+def scrape_articles(driver, article_urls):
+    spanish_titles = []
+
+    for i, url in enumerate(article_urls, 1):
+        title = scrape_single_article(driver, url, i)
+        spanish_titles.append(title)
+
+    return spanish_titles
+
+
+# =========================================================
+# MAIN EXECUTION
+# =========================================================
+
+# headless firefox
+os.environ["MOZ_HEADLESS"] = "1"
+os.environ["MOZ_DISABLE_CONTENT_SANDBOX"] = "1"
+
+options = Options()
+options.set_preference("intl.accept_languages", "es-ES,es")
+
+driver = webdriver.Firefox(options=options)
+
+# open homepage
+driver.get("https://elpais.com/")
+time.sleep(5)
+
+soup = BeautifulSoup(driver.page_source, "lxml")
+
+# extract and filter opinion URLs
+all_urls = extract_opinion_urls(soup)
+
+article_urls = [
+    u for u in all_urls
+    if "/opinion/" in u and not u.rstrip("/").endswith("/opinion")
+][:5]
+
+print("\nFound opinion articles:")
+for url in article_urls:
+    print(url)
+
+# scrape
+spanish_titles = scrape_articles(driver, article_urls)
+
+driver.quit()
+
+# TRANSLATION
+
 print("\n==============================")
 print("TRANSLATING TITLES TO ENGLISH")
 
@@ -181,5 +196,16 @@ for es, en in zip(spanish_titles, translated_titles):
     print("\nSpanish:", es)
     print("English:", en)
 
-driver.quit()
+# WORD ANALYSIS
+print("\n==============================")
+print("REPEATED WORDS (count > 2)")
+
+repeated_words = find_repeated_words(translated_titles, min_count=3)
+
+if repeated_words:
+    for word, count in repeated_words.items():
+        print(word, "->", count)
+else:
+    print("No words repeated more than twice.")
+
 print("\nPART 2 COMPLETE")
