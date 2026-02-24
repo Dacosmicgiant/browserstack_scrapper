@@ -57,6 +57,25 @@ def extract_opinion_urls(soup):
 
     return list(dict.fromkeys(urls))  # remove duplicates
 
+def translate_titles_to_english(spanish_titles):
+    url = "https://rapid-translate-multi-traduction.p.rapidapi.com/t"
+
+    payload = {
+        "from": "es",
+        "to": "en",
+        "q": spanish_titles
+    }
+
+    headers = {
+        "Content-Type": "application/json",
+        "x-rapidapi-host": "rapid-translate-multi-traduction.p.rapidapi.com",
+        "x-rapidapi-key": os.environ["RAPID_API_KEY"]
+    }
+
+    response = requests.post(url, json=payload, headers=headers)
+    response.raise_for_status()
+
+    return response.json()
 
 # environment variables for headless mode and sandboxing
 os.environ["MOZ_HEADLESS"] = "1"  # Run Firefox in headless mode
@@ -111,6 +130,7 @@ for url in article_urls:
 
 os.makedirs("images", exist_ok=True)
 
+spanish_titles = []
 # Scrape each article
 for i, url in enumerate(article_urls, 1):
     print("\n==============================")
@@ -126,6 +146,7 @@ for i, url in enumerate(article_urls, 1):
     title = title_tag.get_text(strip=True) if title_tag else "No title"
     print("\nTITLE (Spanish):")
     print(title)
+    spanish_titles.append(title)
 
     # ---------------- CONTENT ----------------
     paragraphs = article_soup.select("article p")
@@ -150,7 +171,15 @@ for i, url in enumerate(article_urls, 1):
                 print("Image download failed")
     else:
         print("No cover image found")
+        
+print("\n==============================")
+print("TRANSLATING TITLES TO ENGLISH")
 
+translated_titles = translate_titles_to_english(spanish_titles)
+
+for es, en in zip(spanish_titles, translated_titles):
+    print("\nSpanish:", es)
+    print("English:", en)
 
 driver.quit()
 print("\nPART 2 COMPLETE")
